@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Word Frequency Histogram - SpaceHind</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f7;
+            color: #333;
+        }
+        h1 {
+            color: #1d1d1f;
+            border-bottom: 2px solid #0071e3;
+            padding-bottom: 10px;
+        }
+        textarea {
+            width: 100%;
+            min-height: 200px;
+            padding: 12px;
+            margin: 20px 0;
+            border: 1px solid #d2d2d7;
+            border-radius: 6px;
+            font-size: 16px;
+            resize: vertical;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .length-filter {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            margin-left: 10px;
+            padding-left: 10px;
+            border-left: 1px solid #d2d2d7;
+        }
+        button {
+            background-color: #0071e3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #0077ed;
+        }
+        input, select {
+            padding: 10px;
+            border: 1px solid #d2d2d7;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+        .chart-container {
+            margin-top: 30px;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .results {
+            margin-top: 30px;
+        }
+        .table-actions {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+        }
+        .word-remove-checkbox {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background-color: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e6e6e6;
+        }
+        th {
+            background-color: #0071e3;
+            color: white;
+            font-weight: 500;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+        .footer {
+            margin-top: 40px;
+            text-align: center;
+            color: #86868b;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Word Frequency Histogram</h1>
+    
+    <textarea id="textInput" placeholder="Paste your text here..."></textarea>
+    
+    <div class="controls">
+        <button id="analyzeBtn">Analyze Text</button>
+        <input type="number" id="limitInput" min="1" value="20" placeholder="Number of words to show">
+        <select id="sortOrder">
+            <option value="frequency">Sort by frequency</option>
+            <option value="alphabetical">Sort alphabetically</option>
+        </select>
+        <input type="text" id="excludeInput" placeholder="Words to exclude (comma separated)">
+        <button id="updateChartBtn" style="background-color: #34c759;">Update Chart</button>
+        <div class="length-filter">
+            <label for="minWordLength">Min word length:</label>
+            <input type="number" id="minWordLength" min="1" max="15" value="3" style="width: 50px;">
+            <button id="filterByLengthBtn" style="background-color: #5ac8fa;">Filter</button>
+        </div>
+    </div>
+    
+    <div class="chart-container">
+        <canvas id="histogramChart"></canvas>
+    </div>
+    
+    <div class="results">
+        <h2>Word Frequency Table</h2>
+        <div class="table-actions">
+            <button id="checkAllBtn" style="background-color: #ff9500;">Check All</button>
+            <button id="uncheckAllBtn" style="background-color: #ff3b30;">Uncheck All</button>
+            <button id="checkCommonBtn" style="background-color: #5856d6;">Check Common Fillers</button>
+            <button id="resetRemovalsBtn" style="background-color: #32d74b;">Reset All Removals</button>
+        </div>
+        <table id="resultsTable">
+            <thead>
+                <tr>
+                    <th>Word</th>
+                    <th>Frequency</th>
+                    <th>Percentage</th>
+                    <th>Remove</th>
+                </tr>
+            </thead>
+            <tbody id="resultsBody"></tbody>
+        </table>
+    </div>
+    
+    <div class="footer">
+        <p>© 2025 SpaceHind.in | Created by <a href="https://spacehind.in">SpaceHind</a></p>
+    </div>
+
+    <script>
+        // Chart.js instance
+        let myChart = null;
+        
+        // Store original word frequency data
+        let originalWordFrequency = {};
+        let originalText = "";
+        let permanentlyRemovedWords = []; // Track words that should stay removed
+        
+        document.getElementById('analyzeBtn').addEventListener('click', analyzeText);
+        document.getElementById('updateChartBtn').addEventListener('click', updateFromCheckboxes);
+        document.getElementById('filterByLengthBtn').addEventListener('click', filterByLength);
+        
+        function filterByLength() {
+            // Get the minimum length from the input
+            const minLength = parseInt(document.getElementById('minWordLength').value) || 3;
+            
+            // Find all words in the original frequency data that are below the minimum length
+            const shortWords = Object.keys(originalWordFrequency).filter(word => word.length < minLength);
+            
+            // Add these short words to the permanently removed words list
+            permanentlyRemovedWords = [...new Set([...permanentlyRemovedWords, ...shortWords])];
+            
+            // Update the exclude input field to reflect the complete list
+            const excludeInput = document.getElementById('excludeInput');
+            excludeInput.value = permanentlyRemovedWords.join(', ');
+            
+            // Update the chart to show the filtered results
+            updateFromCheckboxes();
+        }
+        
+        function addCustomExcludes() {
+            // Get any manually added words from the exclude input field
+            const excludeInput = document.getElementById('excludeInput');
+            const manualExcludes = excludeInput.value
+                .split(',')
+                .map(word => word.trim().toLowerCase())
+                .filter(word => word.length > 0);
+            
+            // Add these to permanently removed words
+            permanentlyRemovedWords = [...new Set([...permanentlyRemovedWords, ...manualExcludes])];
+            
+            // Update the exclude input field to show the complete list
+            excludeInput.value = permanentlyRemovedWords.join(', ');
+            
+            // Update the chart with the new exclusions
+            updateFromCheckboxes();
+        }
+        
+        function analyzeText() {
+            // Reset the removal tracking when analyzing new text
+            resetRemovedWords();
+            
+            originalText = document.getElementById('textInput').value;
+            const limit = parseInt(document.getElementById('limitInput').value) || 20;
+            const sortOrder = document.getElementById('sortOrder').value;
+            
+            // Get excluded words and trim each one
+            const excludeInput = document.getElementById('excludeInput').value;
+            const excludeWords = excludeInput
+                .split(',')
+                .map(word => word.trim().toLowerCase())
+                .filter(word => word.length > 0);
+            
+            // Initialize the permanently removed words list
+            permanentlyRemovedWords = [...excludeWords];
+                
+            // Default common words to exclude if none specified
+            const defaultExcludes = [];
+            
+            // Process the text
+            originalWordFrequency = countWords(originalText, [...defaultExcludes, ...excludeWords]);
+            
+            // Sort and limit the results
+            let sortedWords = sortWordFrequency(originalWordFrequency, sortOrder);
+            sortedWords = sortedWords.slice(0, limit);
+            
+            // Update the UI
+            updateChart(sortedWords);
+            updateTable(sortedWords, getTotalCount(originalWordFrequency));
+        }
+        
+        function updateFromCheckboxes() {
+            // Get all checked words to exclude
+            const checkedBoxes = document.querySelectorAll('.word-remove-checkbox:checked');
+            const newWordsToRemove = Array.from(checkedBoxes).map(checkbox => checkbox.getAttribute('data-word'));
+            
+            // Get any manually added words from the exclude input field
+            const excludeInput = document.getElementById('excludeInput');
+            const manualExcludes = excludeInput.value
+                .split(',')
+                .map(word => word.trim().toLowerCase())
+                .filter(word => word.length > 0);
+            
+            // Combine all sources of words to remove
+            permanentlyRemovedWords = [...new Set([...permanentlyRemovedWords, ...newWordsToRemove, ...manualExcludes])];
+            
+            // Update the exclude input field to reflect the complete list
+            excludeInput.value = permanentlyRemovedWords.join(', ');
+            
+            // Create filtered word frequency from original data, removing ALL words in the permanent list
+            let filteredFrequency = {...originalWordFrequency};
+            permanentlyRemovedWords.forEach(word => {
+                delete filteredFrequency[word];
+            });
+            
+            // Sort and limit the results
+            const limit = parseInt(document.getElementById('limitInput').value) || 20;
+            const sortOrder = document.getElementById('sortOrder').value;
+            let sortedWords = sortWordFrequency(filteredFrequency, sortOrder);
+            sortedWords = sortedWords.slice(0, limit);
+            
+            // Update the UI
+            updateChart(sortedWords);
+            updateTable(sortedWords, getTotalCount(filteredFrequency));
+        }
+        
+        function countWords(text, excludeWords) {
+            // Remove common punctuation and convert to lowercase
+            const cleanText = text.toLowerCase()
+                .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+                
+            // Split by spaces to get words
+            const words = cleanText.split(' ');
+            
+            // Count frequency of each word
+            const wordMap = {};
+            
+            words.forEach(word => {
+                // Skip empty strings and excluded words
+                if (word && !excludeWords.includes(word)) {
+                    wordMap[word] = (wordMap[word] || 0) + 1;
+                }
+            });
+            
+            return wordMap;
+        }
+        
+        // Function to reset all permanently removed words (for a fresh analysis)
+        function resetRemovedWords() {
+            permanentlyRemovedWords = [];
+            const excludeInput = document.getElementById('excludeInput');
+            excludeInput.value = '';
+        }
+        
+        function sortWordFrequency(wordFrequency, sortOrder) {
+            // Convert to array of [word, frequency] pairs
+            const wordArray = Object.entries(wordFrequency);
+            
+            // Sort based on the selected order
+            if (sortOrder === 'frequency') {
+                wordArray.sort((a, b) => b[1] - a[1]); // Descending by frequency
+            } else if (sortOrder === 'alphabetical') {
+                wordArray.sort((a, b) => a[0].localeCompare(b[0])); // Alphabetical
+            }
+            
+            return wordArray;
+        }
+        
+        function getTotalCount(wordFrequency) {
+            return Object.values(wordFrequency).reduce((sum, count) => sum + count, 0);
+        }
+        
+        function updateChart(wordData) {
+            const ctx = document.getElementById('histogramChart').getContext('2d');
+            
+            // Destroy existing chart if it exists
+            if (myChart) {
+                myChart.destroy();
+            }
+            
+            // Extract labels and data
+            const labels = wordData.map(item => item[0]);
+            const data = wordData.map(item => item[1]);
+            
+            // Create new chart
+            myChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Word Frequency',
+                        data: data,
+                        backgroundColor: 'rgba(0, 113, 227, 0.7)',
+                        borderColor: 'rgba(0, 113, 227, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `Frequency: ${context.raw}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Frequency'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Words'
+                            },
+                            ticks: {
+                                autoSkip: false,
+                                maxRotation: 45,
+                                minRotation: 45
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // Adjust the size of the chart container
+            document.querySelector('.chart-container').style.height = 
+                Math.max(400, labels.length * 15) + 'px';
+        }
+        
+        function updateTable(wordData, totalCount) {
+            const tableBody = document.getElementById('resultsBody');
+            tableBody.innerHTML = '';
+            
+            wordData.forEach(([word, frequency]) => {
+                const percentage = ((frequency / totalCount) * 100).toFixed(2);
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${word}</td>
+                    <td>${frequency}</td>
+                    <td>${percentage}%</td>
+                    <td><input type="checkbox" class="word-remove-checkbox" data-word="${word}"></td>
+                `;
+                
+                tableBody.appendChild(row);
+            });
+            
+            // Add batch actions for the checkboxes
+            addCheckboxActions();
+        }
+        
+        function addCheckboxActions() {
+            // Add event listeners to all checkboxes
+            document.querySelectorAll('.word-remove-checkbox').forEach(checkbox => {
+                checkbox.addEventListener('change', function() {
+                    // Highlight the row if checked
+                    const row = this.closest('tr');
+                    if (this.checked) {
+                        row.style.backgroundColor = '#ffebee';
+                    } else {
+                        row.style.backgroundColor = '';
+                    }
+                });
+            });
+            
+            // Add event listeners for the batch action buttons
+            document.getElementById('checkAllBtn').addEventListener('click', function() {
+                document.querySelectorAll('.word-remove-checkbox').forEach(cb => {
+                    cb.checked = true;
+                    cb.closest('tr').style.backgroundColor = '#ffebee';
+                });
+            });
+            
+            document.getElementById('uncheckAllBtn').addEventListener('click', function() {
+                document.querySelectorAll('.word-remove-checkbox').forEach(cb => {
+                    cb.checked = false;
+                    cb.closest('tr').style.backgroundColor = '';
+                });
+            });
+            
+            document.getElementById('checkCommonBtn').addEventListener('click', function() {
+                // List of common filler words
+                const commonFillers = ['the', 'a', 'an', 'and', 'or', 'but', 'of', 'in', 'on', 'at', 
+                    'to', 'for', 'with', 'by', 'about', 'as', 'is', 'are', 'was', 'were', 'be', 'been',
+                    'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'shall', 'should',
+                    'can', 'could', 'may', 'might', 'must', 'i', 'you', 'he', 'she', 'it', 'we', 'they',
+                    'this', 'that', 'these', 'those', 'my', 'your', 'his', 'her', 'its', 'our', 'their'];
+                
+                document.querySelectorAll('.word-remove-checkbox').forEach(cb => {
+                    const word = cb.getAttribute('data-word');
+                    if (commonFillers.includes(word)) {
+                        cb.checked = true;
+                        cb.closest('tr').style.backgroundColor = '#ffebee';
+                    }
+                });
+            });
+            
+            // Add reset button functionality
+            document.getElementById('resetRemovalsBtn').addEventListener('click', function() {
+                resetRemovedWords();
+                
+                // Re-analyze the text with the reset exclusion list
+                analyzeText();
+                
+                // Show a brief message to confirm reset
+                alert('All word removals have been reset');
+            });
+        }
+    </script>
+</body>
+</html>
